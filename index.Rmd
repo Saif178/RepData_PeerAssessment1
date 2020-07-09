@@ -1,0 +1,154 @@
+---
+title: "Activity Data Analysis"
+author: "Saif Ul Mehdi"
+date: "09/07/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the “quantified self” movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+The data for this assignment can be downloaded from the course web site:
+
+Dataset: Activity monitoring data [52K]
+The variables included in this dataset are:
+
+steps: Number of steps taking in a 5-minute interval (missing values are coded as NA)
+date: The date on which the measurement was taken in YYYY-MM-DD format
+interval: Identifier for the 5-minute interval in which measurement was taken
+
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset.
+
+## Data Processing
+
+```{r}
+library(ggplot2)
+library(lubridate)
+dat<-read.csv('./activity/activity.csv')
+dim(dat)
+names(dat)
+head(dat)
+str(dat)
+mis_dat<-sum(is.na(dat$steps))/dim(dat)[1]
+mis_dat
+dat$date<-ymd(dat$date)
+```
+
+## Histogram Plot
+
+```{r}
+tot_steps<-data.frame(tapply(dat$steps,dat$date,sum,na.rm=TRUE))
+tot_steps$date<-rownames(tot_steps)
+rownames(tot_steps)<-1:nrow(tot_steps)
+names(tot_steps)[1]<-'Total Steps'
+
+png('./activity/plot1.png')
+qplot(tot_steps$`Total Steps`,geom='histogram',xlab='Total Steps',ylab='Counts',main='Total Steps in Histogram')
+dev.off()
+qplot(tot_steps$`Total Steps`,geom='histogram',xlab='Total Steps',ylab='Counts',main='Total Steps in Histogram')
+
+png('./activity/plot2.png')
+ggplot(tot_steps,aes(x=date,y=`Total Steps`))+geom_bar(stat='identity')+xlab('Date')+ylab('Total Steps')+ggtitle('Total Steps by Date')
+dev.off()
+ggplot(tot_steps,aes(x=date,y=`Total Steps`))+geom_bar(stat='identity')+xlab('Date')+ylab('Total Steps')+ggtitle('Total Steps by Date')
+```
+
+## Mean and Median
+
+```{r}
+library(dplyr)
+mean_steps<-data.frame(tapply(dat$steps,dat$date,mean,na.rm=TRUE))
+mean_steps$date<-rownames(mean_steps)
+rownames(mean_steps)<-1:nrow(mean_steps)
+names(mean_steps)[1]<-'Mean Steps'
+temp<-dat%>%select(date,steps)%>%group_by(date)%>%summarize(median(steps,na.rm=TRUE))
+mean_steps$`Median Steps`<-temp[[2]]
+head(mean_steps)
+```
+## Time Series plot
+```{r}
+mean_steps$date<-as.Date(mean_steps$date,format='%Y-%m-%d')
+png('./activity/plot3.png')
+ggplot(mean_steps,aes(x=date,y=`Mean Steps`))+geom_line(size=2)+scale_x_date()+ylab('Mean Steps')+xlab('Date')+ggtitle('Mean Steps by Date')
+dev.off()
+ggplot(mean_steps,aes(x=date,y=`Mean Steps`))+geom_line(size=2)+scale_x_date()+ylab('Mean Steps')+xlab('Date')+ggtitle('Mean Steps by Date')
+```
+##5-minute interval on average containing maximum number of steps
+```{r}
+dat$interval<-factor(dat$interval)
+min_interval<-aggregate(data=dat,steps~date+interval,FUN='mean')
+min_interval<-aggregate(data=min_interval,steps~interval,FUN='max')
+head(min_interval)
+```
+## Imputing Data for Missing Values
+Strategy for imputing missing data
+1. Constant value imputation
+2. Regression model value imputation
+3. Mean/mode value imputation
+We are using the third strategy for simplification purpose
+```{r}
+dat1<-dat
+dat1$Missing<-is.na(dat$steps)
+dat1<-aggregate(data=dat1,Missing~date+interval,FUN='sum')
+miss_date<-data.frame(tapply(dat1$Missing,dat1$date,sum))
+miss_date$date<-rownames(miss_date)
+rownames(miss_date)<-1:nrow(miss_date)
+names(miss_date)[1]<-'Missing'
+miss_date$date<-as.Date(miss_date$date,format='%Y-%m-%d')
+
+miss_interval<-data.frame(tapply(dat1$Missing,dat1$interval,sum))
+miss_interval$Interval<-rownames(miss_interval)
+rownames(miss_interval)<-1:nrow(miss_interval)
+names(miss_interval)[1]<-'Missing'
+
+par(mfrow=c(1,2))
+with(miss_date,plot(date,Missing,pch=19,main='Missing Value Distributuion\nby Date'))
+with(miss_interval,plot(Interval,Missing,pch=19,main='Missing Value Distribution\nby Interval'))
+table(dat$date)
+```
+As it can be seen from the plot, there is a distinct pattern of missing values. For every interval, there are 8 missing values and for 8 dates, there are 288 missing values which means that the 8 dates don't have any data recorded. For such kind of data mean value imputation is appropriate.
+```{r}
+dat2<-dat
+dat2$interval<-as.numeric(dat2$interval)
+dat2$weekday<-wday(dat2$date,label=TRUE)
+dat2_mean<-aggregate(data=dat2,steps~interval+weekday,FUN='mean',na.rm=TRUE)
+dat_merge<-merge(x=dat2,y=dat2_mean,by=c('interval','weekday'))
+dat_merge$Steps.Updated<-0
+for(i in 1:dim(dat_merge)[1])
+{
+  if(is.na(dat_merge[i,3])) {dat_merge[i,6]=dat_merge[i,5]}
+  else {dat_merge[i,6]=dat_merge[i,3]}
+}
+dat_merge<-select(dat_merge,date,weekday,interval,Steps.Updated)
+names(dat_merge)[4]<-'Steps'
+head(dat_merge)
+```
+## Histogram plot after data imputation
+```{r}
+png('./activity/plot4.png')
+qplot(dat_merge$Steps,geom='histogram',main='Total steps taken post imputation',xlab='Steps',ylab='Count')
+dev.off()
+qplot(dat_merge$Steps,geom='histogram',main='Total steps taken post imputation',xlab='Steps',ylab='Count')
+```
+
+## Panel plot comparing avg no. of steps taken per 5 minute interval across           weekdays and weekends
+```{r}
+dat_merge2<-dat_merge
+levels(dat_merge2$weekday)<-c(1,2,3,4,5,6,7)
+dat_merge2$WDWE<-dat_merge2$weekday %in% c(1,2,3,4,5)
+dat_mean<-aggregate(data=dat_merge2,Steps~interval+WDWE,mean,na.rm=TRUE)
+dat_mean$WDWE<-as.factor(dat_mean$WDWE)
+levels(dat_mean$WDWE)<-c('Weekday','Weekend')
+
+png('./activity/plot5.png')
+ggplot(dat_mean,aes(interval,Steps))+geom_line(size=2)+facet_grid(WDWE~.)
+dev.off()
+ggplot(dat_mean,aes(interval,Steps))+geom_line(size=2)+facet_grid(WDWE~.)
+```
